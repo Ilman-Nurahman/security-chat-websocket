@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Receiver</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 20px;
+      }
+
+      .container {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 20px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        padding: 40px;
+        max-width: 600px;
+        width: 100%;
+        animation: slideIn 0.5s ease-out;
+      }
+
+      @keyframes slideIn {
+        from {
+          opacity: 0;
+          transform: translateY(-30px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      h2 {
+        color: #f5576c;
+        text-align: center;
+        margin-bottom: 30px;
+        font-size: 28px;
+        font-weight: 600;
+        letter-spacing: 1px;
+      }
+
+      .badge {
+        display: inline-block;
+        background: linear-gradient(135deg, #f093fb, #f5576c);
+        color: white;
+        padding: 5px 15px;
+        border-radius: 20px;
+        font-size: 14px;
+        margin-left: 10px;
+      }
+
+      label {
+        display: block;
+        color: #333;
+        font-weight: 600;
+        margin-bottom: 10px;
+        margin-top: 20px;
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      textarea {
+        width: 100%;
+        padding: 15px;
+        border: 2px solid #e0e0e0;
+        border-radius: 10px;
+        font-size: 14px;
+        font-family: "Courier New", monospace;
+        resize: vertical;
+        transition: all 0.3s ease;
+        background: #f8f9fa;
+        min-height: 120px;
+      }
+
+      textarea:focus {
+        outline: none;
+        border-color: #f5576c;
+        background: white;
+        box-shadow: 0 0 0 3px rgba(245, 87, 108, 0.1);
+      }
+
+      button {
+        width: 100%;
+        padding: 15px;
+        margin-bottom: 25px;
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+        border: none;
+        border-radius: 10px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        box-shadow: 0 4px 15px rgba(245, 87, 108, 0.4);
+      }
+
+      button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(245, 87, 108, 0.6);
+      }
+
+      button:active {
+        transform: translateY(0);
+      }
+
+      .icon {
+        margin-right: 8px;
+      }
+
+      h3 {
+        color: #333;
+        margin-top: 30px;
+        margin-bottom: 15px;
+        font-size: 16px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      #out {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border: 2px solid #e0e0e0;
+        border-radius: 10px;
+        padding: 20px;
+        min-height: 100px;
+        font-size: 16px;
+        line-height: 1.6;
+        color: #333;
+        word-wrap: break-word;
+        box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+      }
+
+      #out:empty:before {
+        content: "Waiting for encrypted message...";
+        color: #999;
+        font-style: italic;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h2>🔓 Receiver <span class="badge">Port 5501</span></h2>
+
+      <button onclick="genKey()">
+        <span class="icon">🔑</span>Generate RSA Key
+      </button>
+
+      <label for="pub">🔐 Public Key:</label>
+      <textarea
+        id="pub"
+        readonly
+        placeholder="Click 'Generate RSA Key' to create your public key..."
+      ></textarea>
+
+      <h3>📨 Pesan Terdekripsi:</h3>
+      <button onclick="decryptMsg()">🔓 Dekrip Pesan</button>
+      <div id="out"></div>
+    </div>
+
+    <script>
+      let rsaKeyPair;
+      let pendingData = null;
+      let decrypted = false;
+
+      const ws = new WebSocket("ws://localhost:8080");
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: "receiver" }));
+      };
+
+      async function genKey() {
+        rsaKeyPair = await crypto.subtle.generateKey(
+          {
+            name: "RSA-OAEP",
+            modulusLength: 2048,
+            publicExponent: new Uint8Array([1, 0, 1]),
+            hash: "SHA-256",
+          },
+          true,
+          ["encrypt", "decrypt"]
+        );
+
+        const pub = await crypto.subtle.exportKey("spki", rsaKeyPair.publicKey);
+
+        document.getElementById("pub").value = btoa(
+          String.fromCharCode(...new Uint8Array(pub))
+        );
+      }
+
+      // TERIMA PESAN → SIMPAN SAJA
+      ws.onmessage = (e) => {
+        pendingData = JSON.parse(e.data);
+        decrypted = false;
+
+        const out = document.getElementById("out");
+        out.innerText =
+          "Pesan terenkripsi diterima.\nKlik DEKRIP untuk membuka pesan.";
+
+        // klik / hover tampilkan ciphertext
+        out.onclick = showEncrypted;
+        out.onmouseenter = showEncrypted;
+      };
+
+      // TAMPILKAN CIPHERTEXT
+      function showEncrypted() {
+        if (!pendingData || decrypted) return;
+
+        alert("📦 CIPHERTEXT (Base64)\n\n" + pendingData.msg);
+      }
+
+      // DEKRIP SETELAH TOMBOL DIKLIK
+      async function decryptMsg() {
+        if (!pendingData) {
+          alert("Belum ada pesan masuk");
+          return;
+        }
+
+        const aesRaw = await crypto.subtle.decrypt(
+          { name: "RSA-OAEP" },
+          rsaKeyPair.privateKey,
+          b64(pendingData.key)
+        );
+
+        const aesKey = await crypto.subtle.importKey(
+          "raw",
+          aesRaw,
+          { name: "AES-GCM" },
+          false,
+          ["decrypt"]
+        );
+
+        const msg = await crypto.subtle.decrypt(
+          { name: "AES-GCM", iv: b64(pendingData.iv) },
+          aesKey,
+          b64(pendingData.msg)
+        );
+
+        const out = document.getElementById("out");
+        out.innerText = new TextDecoder().decode(msg);
+
+        decrypted = true;
+        out.onclick = null;
+        out.onmouseenter = null;
+      }
+
+      function b64(x) {
+        return Uint8Array.from(atob(x), (c) => c.charCodeAt(0)).buffer;
+      }
+    </script>
+  </body>
+</html>

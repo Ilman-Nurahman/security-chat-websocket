@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Sender</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 20px;
+      }
+
+      .container {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 20px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        padding: 40px;
+        max-width: 600px;
+        width: 100%;
+        animation: slideIn 0.5s ease-out;
+      }
+
+      @keyframes slideIn {
+        from {
+          opacity: 0;
+          transform: translateY(-30px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      h2 {
+        color: #667eea;
+        text-align: center;
+        margin-bottom: 30px;
+        font-size: 28px;
+        font-weight: 600;
+        letter-spacing: 1px;
+      }
+
+      .badge {
+        display: inline-block;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        padding: 5px 15px;
+        border-radius: 20px;
+        font-size: 14px;
+        margin-left: 10px;
+      }
+
+      label {
+        display: block;
+        color: #333;
+        font-weight: 600;
+        margin-bottom: 10px;
+        margin-top: 20px;
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      textarea {
+        width: 100%;
+        padding: 15px;
+        border: 2px solid #e0e0e0;
+        border-radius: 10px;
+        font-size: 14px;
+        font-family: "Courier New", monospace;
+        resize: vertical;
+        transition: all 0.3s ease;
+        background: #f8f9fa;
+      }
+
+      textarea:focus {
+        outline: none;
+        border-color: #667eea;
+        background: white;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+      }
+
+      #pub {
+        min-height: 120px;
+      }
+
+      #msg {
+        min-height: 100px;
+      }
+
+      button {
+        width: 100%;
+        padding: 15px;
+        margin-top: 25px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 10px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+      }
+
+      button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+      }
+
+      button:active {
+        transform: translateY(0);
+      }
+
+      .icon {
+        margin-right: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h2>🔐 Sender <span class="badge">Port 5500</span></h2>
+
+      <label for="pub">📋 Public Key Receiver:</label>
+      <textarea
+        id="pub"
+        placeholder="Paste receiver's public key here..."
+      ></textarea>
+
+      <label for="msg">✉️ Pesan:</label>
+      <textarea
+        id="msg"
+        placeholder="Type your secure message here..."
+      ></textarea>
+
+      <button onclick="sendMsg()">
+        <span class="icon">🚀</span>Send Secure Message
+      </button>
+    </div>
+
+    <script>
+      const ws = new WebSocket("ws://localhost:8080");
+
+      async function sendMsg() {
+        const pubBuf = Uint8Array.from(
+          atob(document.getElementById("pub").value),
+          (c) => c.charCodeAt(0)
+        );
+        const pubKey = await crypto.subtle.importKey(
+          "spki",
+          pubBuf,
+          { name: "RSA-OAEP", hash: "SHA-256" },
+          false,
+          ["encrypt"]
+        );
+        const aesKey = await crypto.subtle.generateKey(
+          { name: "AES-GCM", length: 256 },
+          true,
+          ["encrypt"]
+        );
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const encMsg = await crypto.subtle.encrypt(
+          { name: "AES-GCM", iv },
+          aesKey,
+          new TextEncoder().encode(document.getElementById("msg").value)
+        );
+        const rawAes = await crypto.subtle.exportKey("raw", aesKey);
+        const encKey = await crypto.subtle.encrypt(
+          { name: "RSA-OAEP" },
+          pubKey,
+          rawAes
+        );
+
+        ws.send(
+          JSON.stringify({
+            type: "message",
+            payload: {
+              msg: btoa(String.fromCharCode(...new Uint8Array(encMsg))),
+              key: btoa(String.fromCharCode(...new Uint8Array(encKey))),
+              iv: btoa(String.fromCharCode(...iv)),
+            },
+          })
+        );
+      }
+    </script>
+  </body>
+</html>
